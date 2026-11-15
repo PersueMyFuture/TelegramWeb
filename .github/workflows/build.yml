@@ -12,6 +12,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    # 关键：Gradle 会自动把 ORG_GRADLE_PROJECT_ 前缀识别为项目属性
+    # build.gradle 里的 RELEASE_STORE_PASSWORD 等可直接读取，无需写入文件
+    env:
+      ORG_GRADLE_PROJECT_RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+      ORG_GRADLE_PROJECT_RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+      ORG_GRADLE_PROJECT_RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -35,11 +42,16 @@ jobs:
           mkdir -p TMessagesProj/config
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > TMessagesProj/config/release.keystore
 
-      - name: Inject signing properties
+      - name: Verify Keystore
         run: |
-          echo "RELEASE_STORE_PASSWORD=${{ secrets.RELEASE_STORE_PASSWORD }}" >> gradle.properties
-          echo "RELEASE_KEY_ALIAS=${{ secrets.RELEASE_KEY_ALIAS }}" >> gradle.properties
-          echo "RELEASE_KEY_PASSWORD=${{ secrets.RELEASE_KEY_PASSWORD }}" >> gradle.properties
+          echo "Keystore file size: $(stat -c%s TMessagesProj/config/release.keystore) bytes"
+          echo "Password length: ${#ORG_GRADLE_PROJECT_RELEASE_STORE_PASSWORD}"
+          keytool -list -keystore TMessagesProj/config/release.keystore \
+            -storepass "$ORG_GRADLE_PROJECT_RELEASE_STORE_PASSWORD" \
+            -alias "$ORG_GRADLE_PROJECT_RELEASE_KEY_ALIAS" || {
+              echo "::error::Keystore 验证失败，请检查 KEYSTORE_BASE64 / RELEASE_STORE_PASSWORD / RELEASE_KEY_ALIAS 是否匹配"
+              exit 1
+            }
 
       # =========================
       # Debug 包（afatDebug）
@@ -64,6 +76,16 @@ jobs:
           find TMessagesProj_App -path "*intermediates/apk/*standalone*.apk" -exec cp {} release-assets/telegram-web-standalone-arm64.apk \;
           find TMessagesProj_App -path "*outputs/apk/*standalone*.apk" -exec cp {} release-assets/telegram-web-standalone-arm64.apk \;
 
+      - name: Read version info
+        id: version
+        run: |
+          VERSION_NAME=$(grep -E "^APP_VERSION_NAME" gradle.properties | cut -d'=' -f2 | tr -d ' ')
+          VERSION_CODE=$(grep -E "^APP_VERSION_CODE" gradle.properties | cut -d'=' -f2 | tr -d ' ')
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          echo "name=${VERSION_NAME}" >> $GITHUB_OUTPUT
+          echo "code=${VERSION_CODE}" >> $GITHUB_OUTPUT
+          echo "sha=${COMMIT_SHA}" >> $GITHUB_OUTPUT
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -75,7 +97,14 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: Build ${{ github.run_number }} (web debug + standalone arm64)
+          name: "v${{ steps.version.outputs.name }} (build ${{ github.run_number }})"
+          body: |
+            Telegram Web 编译产物
+            - 版本号：${{ steps.version.outputs.name }} (${{ steps.version.outputs.code }})
+            - 上游 commit：${{ steps.version.outputs.sha }}
+            - 架构：arm64-v8a
+            - 包含：Debug 包、Standalone 包
+            - 包名：org.telegram.messenger.web
           files: release-assets/*.apk
           fail_on_unmatched_files: true
         env:
