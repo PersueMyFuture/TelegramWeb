@@ -24,18 +24,22 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Copy _sa icons from Standalone module
+      # 兜底：如果 build.gradle 没加 sourceSets，这里把 _sa 图标复制到 TMessagesProj_App
+      # 如果 build.gradle 已加 sourceSets，这一步是多余的但无害
+      - name: Ensure _sa icons in TMessagesProj_App
         run: |
-          if [ -d "TMessagesProj_AppStandalone/src/main/res" ]; then
-            for d in TMessagesProj_AppStandalone/src/main/res/mipmap-*; do
+          SRC="TMessagesProj_AppStandalone/src/main/res"
+          DST="TMessagesProj_App/src/main/res"
+          if [ -d "$SRC" ]; then
+            for d in "$SRC"/mipmap-*; do
               [ -d "$d" ] || continue
-              tgt="TMessagesProj_App/src/main/res/$(basename "$d")"
+              tgt="$DST/$(basename "$d")"
               mkdir -p "$tgt"
               find "$d" -name "*_sa*" -exec cp -v {} "$tgt/" \;
             done
           fi
-          echo "=== _sa files now in TMessagesProj_App ==="
-          find TMessagesProj_App/src/main/res -name "*_sa*" | sort
+          echo "=== _sa files in TMessagesProj_App ==="
+          find "$DST" -name "*_sa*" | sort
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -61,13 +65,19 @@ jobs:
           keytool -list -keystore TMessagesProj/config/release.keystore \
             -storepass "$ORG_GRADLE_PROJECT_RELEASE_STORE_PASSWORD" \
             -alias "$ORG_GRADLE_PROJECT_RELEASE_KEY_ALIAS" || {
-              echo "::error::Keystore 验证失败"
+              echo "::error::Keystore 验证失败，请检查 KEYSTORE_BASE64 / RELEASE_STORE_PASSWORD / RELEASE_KEY_ALIAS 是否匹配"
               exit 1
             }
 
+      # =========================
+      # Debug 包（afatDebug，包名 APP_PACKAGE + .web）
+      # =========================
       - name: Build Debug APK (arm64-v8a)
         run: ./gradlew :TMessagesProj_App:assembleAfatDebug -Pandroid.injected.build.abi=arm64-v8a
 
+      # =========================
+      # Standalone 包（afatStandalone，包名 APP_PACKAGE + .web）
+      # =========================
       - name: Build Standalone APK (arm64-v8a)
         run: ./gradlew :TMessagesProj_App:assembleAfatStandalone -Pandroid.injected.build.abi=arm64-v8a
 
@@ -112,7 +122,7 @@ jobs:
             - 上游 commit：${{ steps.version.outputs.sha }}
             - 架构：arm64-v8a
             - 包含：Debug 包、Standalone 包
-            - 包名：org.telegram.messenger.web
+            - 包名：APP_PACKAGE + .web
           files: release-assets/*.apk
           fail_on_unmatched_files: true
         env:
