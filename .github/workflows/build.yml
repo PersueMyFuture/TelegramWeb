@@ -37,6 +37,22 @@ jobs:
       - name: Grant execute permission
         run: chmod +x ./gradlew
 
+      - name: Decode Keystore
+        run: |
+          mkdir -p TMessagesProj/config
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > TMessagesProj/config/release.keystore
+
+      - name: Verify Keystore
+        run: |
+          echo "Keystore file size: $(stat -c%s TMessagesProj/config/release.keystore) bytes"
+          echo "Password length: ${#ORG_GRADLE_PROJECT_RELEASE_STORE_PASSWORD}"
+          keytool -list -keystore TMessagesProj/config/release.keystore \
+            -storepass "$ORG_GRADLE_PROJECT_RELEASE_STORE_PASSWORD" \
+            -alias "$ORG_GRADLE_PROJECT_RELEASE_KEY_ALIAS" || {
+              echo "::error::Keystore 验证失败，请检查 KEYSTORE_BASE64 / RELEASE_STORE_PASSWORD / RELEASE_KEY_ALIAS 是否匹配"
+              exit 1
+            }
+
       # =========================
       # Debug 包（afatDebug）
       # =========================
