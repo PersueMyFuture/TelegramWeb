@@ -1,4 +1,4 @@
-name: Build Telegram Debug APK (web, arm64)
+name: Build Telegram Beta & Web APKs
 
 on:
   workflow_dispatch:
@@ -27,34 +27,72 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4.0.4
 
+      - name: Decode Keystore
+        run: |
+          mkdir -p TMessagesProj/config
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > TMessagesProj/config/release.keystore
+
+      - name: Inject signing properties
+        run: |
+          echo "RELEASE_STORE_PASSWORD=${{ secrets.RELEASE_STORE_PASSWORD }}" >> gradle.properties
+          echo "RELEASE_KEY_ALIAS=${{ secrets.RELEASE_KEY_ALIAS }}" >> gradle.properties
+          echo "RELEASE_KEY_PASSWORD=${{ secrets.RELEASE_KEY_PASSWORD }}" >> gradle.properties
+
       - name: Grant execute permission
         run: chmod +x ./gradlew
 
-      - name: Build Debug APK (arm64-v8a)
-        run: ./gradlew :TMessagesProj_App:assembleDebug -Pandroid.injected.build.abi=arm64-v8a
+      # =========================
+      # Beta 包（afatDebug，包名 .web.beta）
+      # =========================
+      - name: Build Beta APK (arm64-v8a)
+        run: ./gradlew :TMessagesProj_App:assembleAfatDebug -Pandroid.injected.build.abi=arm64-v8a
 
-      - name: List all APK files
-        run: find . -name "*.apk" -type f
-
-      - name: Collect APK
+      - name: Collect Beta APK
         run: |
-          mkdir -p release-assets
-          find TMessagesProj_App -path "*intermediates/apk/*debug*.apk" -exec cp {} release-assets/telegram-web-debug-arm64.apk \;
-          find TMessagesProj_App -path "*outputs/apk/*debug*.apk" -exec cp {} release-assets/telegram-web-debug-arm64.apk \;
+          mkdir -p release-assets/beta
+          find TMessagesProj_App -path "*intermediates/apk/afat/debug/*.apk" -exec cp {} release-assets/beta/telegram-beta-arm64.apk \;
+          find TMessagesProj_App -path "*outputs/apk/afat/debug/*.apk" -exec cp {} release-assets/beta/telegram-beta-arm64.apk \;
 
-      - name: Upload Artifact
+      # =========================
+      # Web 包（afatStandalone，包名 .web.web）
+      # =========================
+      - name: Build Web APK (arm64-v8a)
+        run: ./gradlew :TMessagesProj_App:assembleAfatStandalone -Pandroid.injected.build.abi=arm64-v8a
+
+      - name: Collect Web APK
+        run: |
+          mkdir -p release-assets/web
+          find TMessagesProj_App -path "*intermediates/apk/afat/standalone/*.apk" -exec cp {} release-assets/web/telegram-web-arm64.apk \;
+          find TMessagesProj_App -path "*outputs/apk/afat/standalone/*.apk" -exec cp {} release-assets/web/telegram-web-arm64.apk \;
+
+      # =========================
+      # 侦察 + 上传
+      # =========================
+      - name: List collected APKs
+        run: find release-assets -name "*.apk" -type f
+
+      - name: Upload Beta Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: telegram-web-debug-arm64
-          path: release-assets/*.apk
+          name: telegram-beta-arm64
+          path: release-assets/beta/*.apk
+          if-no-files-found: warn
+
+      - name: Upload Web Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-web-arm64
+          path: release-assets/web/*.apk
           if-no-files-found: warn
 
       - name: Publish to Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: Build ${{ github.run_number }} (web debug arm64)
-          files: release-assets/*.apk
+          name: Build ${{ github.run_number }} (beta + web)
+          files: |
+            release-assets/beta/*.apk
+            release-assets/web/*.apk
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
