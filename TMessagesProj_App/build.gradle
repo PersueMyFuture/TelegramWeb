@@ -91,6 +91,7 @@ android {
             multiDexEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), '../TMessagesProj/proguard-rules.pro'
             ndk.debugSymbolLevel = 'FULL'
+            matchingFallbacks = ['release']
         }
 
         release {
