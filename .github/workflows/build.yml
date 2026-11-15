@@ -4,6 +4,10 @@ on:
   workflow_dispatch:
   push:
     branches: [ master, main ]
+    tags: [ 'v*' ]   # 推送 v 开头的 tag 时自动发 Release
+
+permissions:
+  contents: write    # 关键：允许创建/更新 Release
 
 jobs:
   build:
@@ -35,45 +39,9 @@ jobs:
 
       - name: Collect Debug APK
         run: |
-          mkdir -p artifacts/debug
-          find . -path "*/intermediates/apk/*/debug/*.apk" -exec cp {} artifacts/debug/ \;
-          find . -path "*/outputs/apk/*/debug/*.apk" -exec cp {} artifacts/debug/ \;
-          echo "=== Collected Debug APKs ==="
-          ls -la artifacts/debug/
-
-      - name: Upload Debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: telegram-debug-arm64
-          path: artifacts/debug/*.apk
-          if-no-files-found: warn
-
-      # =========================
-      # Release 64 位（需要签名 Secrets）
-      # 若未配置 KEYSTORE_BASE64 等 Secrets，请保持下面五步为注释状态
-      # =========================
-      # - name: Decode Release Keystore
-      #   run: |
-      #     mkdir -p TMessagesProj/config
-      #     echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > TMessagesProj/config/release.keystore
-
-      # - name: Build Release APK (arm64-v8a)
-      #   run: ./gradlew :TMessagesProj_App:assembleRelease -Pandroid.injected.build.abi=arm64-v8a
-
-      # - name: Collect Release APK
-      #   run: |
-      #     mkdir -p artifacts/release
-      #     find . -path "*/intermediates/apk/*/release/*.apk" -exec cp {} artifacts/release/ \;
-      #     find . -path "*/outputs/apk/*/release/*.apk" -exec cp {} artifacts/release/ \;
-      #     echo "=== Collected Release APKs ==="
-      #     ls -la artifacts/release/
-
-      # - name: Upload Release APK
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: telegram-release-arm64
-      #     path: artifacts/release/*.apk
-      #     if-no-files-found: warn
+          mkdir -p release-assets
+          find TMessagesProj_App -path "*intermediates/apk/*debug*.apk" -exec cp {} release-assets/telegram-debug-arm64.apk \;
+          find TMessagesProj_App -path "*outputs/apk/*debug*.apk" -exec cp {} release-assets/telegram-debug-arm64.apk \;
 
       # =========================
       # Web / Standalone 64 位
@@ -81,19 +49,21 @@ jobs:
       - name: Build Web Standalone APK (arm64-v8a)
         run: ./gradlew :TMessagesProj_AppStandalone:assembleStandalone -Pandroid.injected.build.abi=arm64-v8a
 
-      - name: Collect Web Standalone APK
+      - name: Collect Web APK
         run: |
-          mkdir -p artifacts/web
-          find . -path "*/intermediates/apk/*/standalone/*.apk" -exec cp {} artifacts/web/ \;
-          find . -path "*/intermediates/apk/*/*/standalone/*.apk" -exec cp {} artifacts/web/ \;
-          find . -path "*/outputs/apk/*/standalone/*.apk" -exec cp {} artifacts/web/ \;
-          find . -path "*/outputs/apk/*/*/standalone/*.apk" -exec cp {} artifacts/web/ \;
-          echo "=== Collected Web Standalone APKs ==="
-          ls -la artifacts/web/
+          find TMessagesProj_AppStandalone -path "*intermediates/apk*standalone*.apk" -exec cp {} release-assets/telegram-web-standalone-arm64.apk \;
+          find TMessagesProj_AppStandalone -path "*outputs/apk*standalone*.apk" -exec cp {} release-assets/telegram-web-standalone-arm64.apk \;
 
-      - name: Upload Web Standalone APK
-        uses: actions/upload-artifact@v4
+      # =========================
+      # 发布到 GitHub Release
+      # =========================
+      - name: Publish to Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: telegram-web-standalone-arm64
-          path: artifacts/web/*.apk
-          if-no-files-found: warn
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('build-{0}', github.run_number) }}
+          name: ${{ github.ref_type == 'tag' && github.ref_name || format('Build {0}', github.run_number) }}
+          files: |
+            release-assets/*.apk
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
