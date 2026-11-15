@@ -1,4 +1,4 @@
-name: Build Telegram APK
+name: Build Telegram APKs
 
 on:
   workflow_dispatch:
@@ -8,6 +8,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -21,16 +22,53 @@ jobs:
           java-version: '21'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v4.0.4 # 关键修复：升级到 v4.0.4
+        uses: android-actions/setup-android@v4.0.4
 
       - name: Grant execute permission
         run: chmod +x ./gradlew
 
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug -Pandroid.injected.build.abi=arm64-v8a
+      # =========================
+      # Debug 64 位
+      # =========================
+      - name: Build Debug APK (arm64-v8a)
+        run: ./gradlew :TMessagesProj_App:assembleDebug -Pandroid.injected.build.abi=arm64-v8a
 
-      - name: Upload APK
+      - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: telegram-debug-arm64
-          path: TMessagesProj_App/build/outputs/apk/debug/*.apk
+          path: TMessagesProj_App/build/outputs/apk/debug/**/*.apk
+          if-no-files-found: warn
+
+      # =========================
+      # Release 64 位
+      # 如果暂未配置签名 Secrets，请先注释下面两步
+      # =========================
+      - name: Decode Release Keystore
+        run: |
+          mkdir -p TMessagesProj/config
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > TMessagesProj/config/release.keystore
+        # 没有配置 KEYSTORE_BASE64 时，这一步会失败；可先注释本步和下面 Release 构建步
+
+      - name: Build Release APK (arm64-v8a)
+        run: ./gradlew :TMessagesProj_App:assembleRelease -Pandroid.injected.build.abi=arm64-v8a
+
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-release-arm64
+          path: TMessagesProj_App/build/outputs/apk/release/**/*.apk
+          if-no-files-found: warn
+
+      # =========================
+      # Web / Standalone 64 位
+      # =========================
+      - name: Build Web Standalone APK (arm64-v8a)
+        run: ./gradlew :TMessagesProj_AppStandalone:assembleStandalone -Pandroid.injected.build.abi=arm64-v8a
+
+      - name: Upload Web Standalone APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-web-standalone-arm64
+          path: TMessagesProj_AppStandalone/build/outputs/apk/**/*.apk
+          if-no-files-found: warn
