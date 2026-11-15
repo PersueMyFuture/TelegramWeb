@@ -1,4 +1,4 @@
-name: Build Telegram Web APKs (debug + standalone, arm64)
+name: Build Telegram APK (web standalone, arm64)
 
 on:
   workflow_dispatch:
@@ -24,8 +24,6 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      # 兜底：如果 build.gradle 没加 sourceSets，这里把 _sa 图标复制到 TMessagesProj_App
-      # 如果 build.gradle 已加 sourceSets，这一步是多余的但无害
       - name: Ensure _sa icons in TMessagesProj_App
         run: |
           SRC="TMessagesProj_AppStandalone/src/main/res"
@@ -61,38 +59,12 @@ jobs:
       - name: Verify Keystore
         run: |
           echo "Keystore file size: $(stat -c%s TMessagesProj/config/release.keystore) bytes"
-          echo "Password length: ${#ORG_GRADLE_PROJECT_RELEASE_STORE_PASSWORD}"
           keytool -list -keystore TMessagesProj/config/release.keystore \
             -storepass "$ORG_GRADLE_PROJECT_RELEASE_STORE_PASSWORD" \
             -alias "$ORG_GRADLE_PROJECT_RELEASE_KEY_ALIAS" || {
-              echo "::error::Keystore 验证失败，请检查 KEYSTORE_BASE64 / RELEASE_STORE_PASSWORD / RELEASE_KEY_ALIAS 是否匹配"
+              echo "::error::Keystore 验证失败"
               exit 1
             }
-
-      # =========================
-      # Debug 包（afatDebug，包名 APP_PACKAGE + .web）
-      # =========================
-      - name: Build Debug APK (arm64-v8a)
-        run: ./gradlew :TMessagesProj_App:assembleAfatDebug -Pandroid.injected.build.abi=arm64-v8a
-
-      # =========================
-      # Standalone 包（afatStandalone，包名 APP_PACKAGE + .web）
-      # =========================
-      - name: Build Standalone APK (arm64-v8a)
-        run: ./gradlew :TMessagesProj_App:assembleAfatStandalone -Pandroid.injected.build.abi=arm64-v8a
-
-      - name: List all APK files
-        run: find . -name "*.apk" -type f
-
-      - name: Collect APKs
-        run: |
-          mkdir -p release-assets
-          find TMessagesProj_App -path "*intermediates/apk/*debug*.apk" -exec cp {} release-assets/telegram-web-debug-arm64.apk \;
-          find TMessagesProj_App -path "*outputs/apk/*debug*.apk" -exec cp {} release-assets/telegram-web-debug-arm64.apk \;
-          find TMessagesProj_App -path "*intermediates/apk/*standalone*.apk" -exec cp {} release-assets/telegram-web-standalone-arm64.apk \;
-          find TMessagesProj_App -path "*outputs/apk/*standalone*.apk" -exec cp {} release-assets/telegram-web-standalone-arm64.apk \;
-          echo "Collected files:"
-          ls -lh release-assets/
 
       - name: Read version info
         id: version
@@ -103,11 +75,49 @@ jobs:
           echo "name=${VERSION_NAME}" >> $GITHUB_OUTPUT
           echo "code=${VERSION_CODE}" >> $GITHUB_OUTPUT
           echo "sha=${COMMIT_SHA}" >> $GITHUB_OUTPUT
+          echo "Version: ${VERSION_NAME} (${VERSION_CODE})"
+
+      # =========================
+      # Debug 包（beta）— 默认关闭
+      # 需要时取消下面两行的注释
+      # =========================
+      # - name: Build Debug APK (beta, arm64-v8a)
+      #   run: ./gradlew :TMessagesProj_App:assembleAfatDebug -Pandroid.injected.build.abi=arm64-v8a
+
+      # =========================
+      # Standalone 包（web）
+      # =========================
+      - name: Build Standalone APK (web, arm64-v8a)
+        run: ./gradlew :TMessagesProj_App:assembleAfatStandalone -Pandroid.injected.build.abi=arm64-v8a
+
+      - name: List all APK files
+        run: find . -name "*.apk" -type f
+
+      - name: Collect APKs
+        run: |
+          mkdir -p release-assets
+          VER="${{ steps.version.outputs.name }}"
+          echo "Using version: ${VER}"
+
+          # Debug 包（beta）— 默认关闭
+          # find TMessagesProj_App -path "*intermediates/apk/*debug*.apk" \
+          #   -exec cp {} "release-assets/telegram-beta-${VER}-arm64.apk" \;
+          # find TMessagesProj_App -path "*outputs/apk/*debug*.apk" \
+          #   -exec cp {} "release-assets/telegram-beta-${VER}-arm64.apk" \;
+
+          # Standalone 包（web）
+          find TMessagesProj_App -path "*intermediates/apk/*standalone*.apk" \
+            -exec cp {} "release-assets/telegram-web-${VER}-arm64.apk" \;
+          find TMessagesProj_App -path "*outputs/apk/*standalone*.apk" \
+            -exec cp {} "release-assets/telegram-web-${VER}-arm64.apk" \;
+
+          echo "Collected files:"
+          ls -lh release-assets/
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: telegram-web-arm64
+          name: telegram-web-arm64-${{ steps.version.outputs.name }}
           path: release-assets/*.apk
           if-no-files-found: error
 
@@ -117,12 +127,11 @@ jobs:
           tag_name: build-${{ github.run_number }}
           name: "v${{ steps.version.outputs.name }} (build ${{ github.run_number }})"
           body: |
-            Telegram Web 编译产物
-            - 版本号：${{ steps.version.outputs.name }} (${{ steps.version.outputs.code }})
+            Telegram 编译产物
+            - 上游版本号：${{ steps.version.outputs.name }} (${{ steps.version.outputs.code }})
             - 上游 commit：${{ steps.version.outputs.sha }}
             - 架构：arm64-v8a
-            - 包含：Debug 包、Standalone 包
-            - 包名：APP_PACKAGE + .web
+            - `telegram-web-*-arm64.apk`：Standalone 包，包名 `.web`
           files: release-assets/*.apk
           fail_on_unmatched_files: true
         env:
