@@ -98,6 +98,7 @@ android {
             debuggable true
             jniDebuggable true
             signingConfig signingConfigs.release
+            applicationIdSuffix ".web"
             minifyEnabled false
             shrinkResources false
             multiDexEnabled true
