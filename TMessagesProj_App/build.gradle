@@ -89,6 +89,7 @@ android {
             minifyEnabled false
             shrinkResources false
             multiDexEnabled true
+            testOnly false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), '../TMessagesProj/proguard-rules.pro'
             ndk.debugSymbolLevel = 'FULL'
             matchingFallbacks = ['release']
