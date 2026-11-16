@@ -89,7 +89,8 @@ android {
             minifyEnabled false
             shrinkResources false
             multiDexEnabled true
-            testOnly false
+            // 使用占位符强制覆盖 testOnly 属性
+            manifestPlaceholders = [testOnly: "false"]  // ← 关键修改
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), '../TMessagesProj/proguard-rules.pro'
             ndk.debugSymbolLevel = 'FULL'
             matchingFallbacks = ['release']
